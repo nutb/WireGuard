@@ -90,6 +90,7 @@ static void mount_filesystems(void)
 		panic("procfs mount");
 	if (mount("none", "/sys", "sysfs", 0, NULL))
 		panic("sysfs mount");
+	mount("none", "/sys/kernel/debug", "debugfs", 0, NULL); /* Might fail, which is fine. */
 	if (mount("none", "/tmp", "tmpfs", 0, NULL))
 		panic("tmpfs mount");
 	if (mount("none", "/run", "tmpfs", 0, NULL))
@@ -207,6 +208,28 @@ static void ensure_console(void)
 	panic("Unable to open console device");
 }
 
+static void check_leaks(void)
+{
+	int fd;
+	char buf[256];
+	ssize_t len;
+
+	fd = open("/sys/kernel/debug/kmemleak", O_WRONLY);
+	if (fd < 0)
+		return;
+	pretty_message("[+] Scanning for memory leaks...");
+	sleep(2); /* Wait for any grace periods. */
+	write(fd, "scan\n", 5);
+	close(fd);
+
+	fd = open("/sys/kernel/debug/kmemleak", O_RDONLY);
+	if (fd < 0)
+		return;
+	while ((len = read(fd, buf, sizeof(buf))) > 0)
+		write(1, buf, len);
+	close(fd);
+}
+
 int main(int argc, char *argv[])
 {
 	seed_rng();
@@ -216,6 +239,7 @@ int main(int argc, char *argv[])
 	kmod_selftests();
 	enable_logging();
 	launch_tests();
+	check_leaks();
 	poweroff();
 	return 1;
 }
